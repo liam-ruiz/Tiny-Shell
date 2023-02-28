@@ -3,7 +3,7 @@
  *
  * This program implements a tiny shell with job control.
  *
- * <Put your name(s) and NetID(s) here>
+ * Liam Ruiz-Steblein ldr3, Jared Duran jad21
  */
 
 #include <sys/types.h>
