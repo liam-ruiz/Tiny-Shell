@@ -48,6 +48,11 @@ struct Job {
 };
 typedef volatile struct Job *JobP;
 
+struct List {
+	char *path;
+	struct List *next;
+} typedef struct List *ListP;
+
 /*
  * Define the jobs list using the "volatile" qualifier because it is accessed
  * by a signal handler (as well as the main program).
@@ -59,6 +64,9 @@ extern char **environ;             // defined by libc
 
 static char prompt[] = "tsh> ";    // command line prompt (DO NOT CHANGE)
 static bool verbose = false;       // If true, print additional output.
+
+static ListP pathList = NULL;
+
 
 /*
  * The following array can be used to map a signal number to its name.
@@ -144,6 +152,32 @@ static ssize_t	sio_puts(const char s[]);
 static void	sio_reverse(char s[]);
 static size_t	sio_strlen(const char s[]);
 
+
+static void
+list_insert(char *str, int begIdx, int endIdx)
+{
+	int length = endIdx - begIdx;
+	// Creates new node to be inserted
+	ListP newNode = Malloc(sizeof(ListP))
+	newNode->next = NULL;
+	newNode->path = Malloc(sizeof(length) + 1);
+	// Copies the string over
+	for (int i = 0; i < length; i++) {
+		node->path[i] = str[i + begIdx];
+	}
+	// NUL terminates.
+	node->path[length] = 0
+
+	if (pathList == NULL) {
+		pathList = node;
+	} else {
+		ListP node = pathList;
+		while (node->next != NULL) {
+			node = node->next;
+		}
+		node->next = newNode;
+	}
+}
 /*
  * Requires:
  *   <to be filled in by the student(s)>
@@ -283,9 +317,19 @@ main(int argc, char **argv)
 static void
 eval(const char *cmdline) 
 {
+	char *argv[MAXLINE];
+	
+	bool is_bg = parseline(cmdline, argv);
+	if (argv[0] == NULL) {
+		return ();
+	}
+	bool is_builtin = builtin_cmd(argv);
+
+
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	(void)cmdline;
+	// TODO: 
 }
 
 /* 
@@ -376,7 +420,19 @@ builtin_cmd(char **argv)
 {
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)argv;
+	char *name = argv[0];
+	if (name == "quit") {
+		exit(0);
+	}
+	if (name == "bg" || name == "fg") {
+		
+	}
+	if (name == "jobs") {
+		listjobs();
+	}
+
+
+	
 	return (false);     // This is not a built-in command.
 }
 
@@ -429,7 +485,19 @@ initpath(const char *pathstr)
 {
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)pathstr;
+	if (pathstr == NULL ) {
+		list_insert("", 0, 0);
+	} else {
+		int beginIdx = 0;
+		for (int i = 0; i < strlen(pathstr); i++) {
+			if (pathstr[i] == ':') {
+				list_insert(pathstr, beginIdx, i);
+				beginIdx = i + 1;
+			}
+		}
+		list_insert(pathstr, beginIdx, strlen(pathstr));
+	}
+
 }
 
 /*
