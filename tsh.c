@@ -51,7 +51,8 @@ typedef volatile struct Job *JobP;
 struct List {
 	char *path;
 	struct List *next;
-} typedef struct List *ListP;
+};
+typedef struct List *ListP;
 
 /*
  * Define the jobs list using the "volatile" qualifier because it is accessed
@@ -155,24 +156,70 @@ static ssize_t	sio_puts(const char s[]);
 static void	sio_reverse(char s[]);
 static size_t	sio_strlen(const char s[]);
 
+/* Wrapper Functions */
+static void	*Malloc(size_t size);
+static pid_t 	Fork(void);
+static int 	Sigemptyset(sigset_t *set);
+static int	Sigaddset(sigset_t *set, int signo);
+
+
+static int	
+Sigaddset(sigset_t *set, int signo)
+{
+	int val = sigaddset(set, signo);
+	if (val < 0) {
+		unix_error("sigaddset error");
+	}
+	return val;
+}
+static int 	
+Sigemptyset(sigset_t *set)
+{
+	int val = sigemptyset(set);
+	if (val < 0) {
+		unix_error("sigemptyset error");
+	}
+	return (val);
+}
+
+static pid_t
+Fork(void)
+{
+	pid_t pid = fork();
+	if (pid == -1) {
+		unix_error("fork error")
+	}
+	return (pid);
+}
+
+static void *
+Malloc(size_t size)
+{
+	void *ptr = malloc(size);
+	if (ptr == NULL) {
+		unix_error("malloc error");
+	}
+	return (ptr);
+}
+
 
 static void
 list_insert(char *str, int begIdx, int endIdx)
 {
 	int length = endIdx - begIdx;
 	// Creates new node to be inserted
-	ListP newNode = Malloc(sizeof(ListP))
+	ListP newNode = Malloc(sizeof(ListP));
 	newNode->next = NULL;
 	newNode->path = Malloc(sizeof(length) + 1);
 	// Copies the string over
 	for (int i = 0; i < length; i++) {
-		node->path[i] = str[i + begIdx];
+		newNode->path[i] = str[i + begIdx];
 	}
 	// NUL terminates.
-	node->path[length] = 0
+	newNode->path[length] = '\0';
 
 	if (pathList == NULL) {
-		pathList = node;
+		pathList = newNode;
 	} else {
 		ListP node = pathList;
 		while (node->next != NULL) {
@@ -332,7 +379,7 @@ eval(const char *cmdline)
 
 	pid_t pid; //process id 
 	if (argv[0] == NULL) {
-		return ();
+		return;
 	}
 	bool is_builtin = builtin_cmd(argv);
 	if (!is_builtin) {
@@ -343,14 +390,16 @@ eval(const char *cmdline)
 		}
 
 		//Parent waits for fg job
+		if(!is_bg) {
+
+		}
 
 	}
 
 
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)cmdline;
-	// TODO: 
+
 }
 
 /* 
@@ -451,7 +500,7 @@ builtin_cmd(char **argv)
 		return (true);
 	}
 	if (strcmp(name, "jobs") == 0) {
-		listjobs();
+		listjobs(jobs);
 		return (true);
 	}
 
