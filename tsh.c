@@ -120,6 +120,9 @@ static void	waitfg(pid_t pid);
 static void	sigchld_handler(int signum);
 static void	sigint_handler(int signum);
 static void	sigtstp_handler(int signum);
+static void	list_insert(char *str, int begIdx, int endIdx);
+
+
 
 // We are providing the following functions to you:
 
@@ -178,6 +181,9 @@ list_insert(char *str, int begIdx, int endIdx)
 		node->next = newNode;
 	}
 }
+
+
+
 /*
  * Requires:
  *   <to be filled in by the student(s)>
@@ -189,6 +195,7 @@ int
 main(int argc, char **argv) 
 {
 	struct sigaction action;
+	
 	int c;
 	char cmdline[MAXLINE];
 	char *path = NULL;
@@ -286,6 +293,7 @@ main(int argc, char **argv)
 		if (fgets(cmdline, MAXLINE, stdin) == NULL && ferror(stdin))
 			app_error("fgets error");
 		if (feof(stdin)) // End of file (ctrl-d)
+			
 			exit(0);
 
 		// Evaluate the command line.
@@ -317,13 +325,26 @@ main(int argc, char **argv)
 static void
 eval(const char *cmdline) 
 {
-	char *argv[MAXLINE];
-	
+	//holds the command line arguments 
+	char *argv[MAXARGS];
+	//parses commandline
 	bool is_bg = parseline(cmdline, argv);
+
+	pid_t pid; //process id 
 	if (argv[0] == NULL) {
 		return ();
 	}
 	bool is_builtin = builtin_cmd(argv);
+	if (!is_builtin) {
+		//Child runs job
+		if ((pid == Fork()) == 0) {
+			setpgid(0,0);
+			//if (execve())
+		}
+
+		//Parent waits for fg job
+
+	}
 
 
 
@@ -421,14 +442,17 @@ builtin_cmd(char **argv)
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	char *name = argv[0];
-	if (name == "quit") {
+	if (strcmp(name, "quit") == 0) {
+		// may need to reap more children before exiting
 		exit(0);
 	}
-	if (name == "bg" || name == "fg") {
-		
+	if (strcmp(name, "bg") == 0 || strcmp(name, "fg") == 0) {
+		do_bgfg(argv);
+		return (true);
 	}
-	if (name == "jobs") {
+	if (strcmp(name, "jobs") == 0) {
 		listjobs();
+		return (true);
 	}
 
 
@@ -465,9 +489,18 @@ do_bgfg(char **argv)
 static void
 waitfg(pid_t pid)
 {
+	sigset_t mask;
+	Sigemptyset(&mask);
+	Sigaddset(&mask, SIGCHLD)
+	while (getpgid(pid) == FG) {
+		sigsuspend(&mask);
+	}
+
+	// optionally reap?
+	return ();
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	(void)pid;
+	
 }
 
 /* 
