@@ -48,11 +48,6 @@ struct Job {
 };
 typedef volatile struct Job *JobP;
 
-struct List {
-	char *path;
-	struct List *next;
-};
-typedef struct List *ListP;
 
 /*
  * Define the jobs list using the "volatile" qualifier because it is accessed
@@ -163,7 +158,7 @@ static int 	Sigprocmask(int how, const sigset_t *restrict set,
                     sigset_t *restrict oldset);
 
 /* Helpers */
-static void	get_path(char *str, int begIdx, int endIdx);
+static char *	get_path(char *str, int begIdx, int endIdx);
 
 
 static int 
@@ -210,7 +205,7 @@ Fork(void)
 {
 	pid_t pid = fork();
 	if (pid == -1) {
-		unix_error("fork error")
+		unix_error("fork error");
 	}
 	return (pid);
 }
@@ -239,7 +234,7 @@ get_path(char *str, int begIdx, int endIdx)
 	}
 	// NUL terminates.
 	newStr[length] = '\0';
-
+	return newStr;
 }
 
 
@@ -295,7 +290,7 @@ main(int argc, char **argv)
 	action.sa_flags = SA_RESTART;
 	if (sigemptyset(&action.sa_mask) < 0)
 		unix_error("sigemptyset error");
-	Sigaddset(&action.sa_mask, SIGSTP);
+	Sigaddset(&action.sa_mask, SIGTSTP);
 	Sigaddset(&action.sa_mask, SIGCHLD);
 	if (sigaction(SIGINT, &action, NULL) < 0)
 		unix_error("sigaction error");
@@ -323,7 +318,7 @@ main(int argc, char **argv)
 	action.sa_flags = SA_RESTART;
 	if (sigemptyset(&action.sa_mask) < 0)
 		unix_error("sigemptyset error");
-	Sigaddset(&action.sa_mask, SIGSTP);
+	Sigaddset(&action.sa_mask, SIGTSTP);
 	Sigaddset(&action.sa_mask, SIGINT);
 	if (sigaction(SIGCHLD, &action, NULL) < 0)
 		unix_error("sigaction error");
@@ -407,57 +402,50 @@ eval(const char *cmdline)
 	if (!is_builtin) {
 		//Child runs job
 
+		//Blocks child to avoid race condition
 		sigset_t mask, prevmask;
+		Sigemptyset(&mask);
+		Sigemptyset(&prevmask);
+		Sigaddset(&mask, SIGCHLD);
+		Sigprocmask(SIG_BLOCK, &mask, &prevmask);
 		
-		//TODO: SET SIGPROCMASK
-		Sigprocmask()
-
-		// 	sigset_t mask, prevmask;
-		// pid_t pgid;
-		// Sigemptyset(&mask);
-		// Sigemptyset(&prevmask);
-		// Sigaddset(&mask, SIGCHLD);
-		// Sigprocmask(SIG_BLOCK, &mask, &prevmask);
-		// // block SIGCHILD
-		// while ((getjobpid(jobs, pid))->state == FG) {
-		// 	sigsuspend(&mask);
-		// }
-		// Sigprocmask(SIG_SETMASK, &prevmask, NULL);
-	
 		if ((pid = Fork()) == 0) {
 			setpgid(0,0);
 
-			//dummy val for execve()
-			int execve_ret_val;
 			
-			//TODO: SET SIGPROCMASK
-
+			
+			//Unblocks child 
+			Sigprocmask(SIG_SETMASK, &prevmask, NULL);
 			//is either a directory, in which case run the execv
+
+			//TODO: does execve run ./ natively? or seperate check
 			if (strchr(argv[0], '/') != NULL || paths == NULL) {
-				execve_ret_val = execve(argv[0], argv, environ);
+				execve(argv[0], argv, environ);
+				
 			} else { //isn't a directory, so needs to search the path and run execv
 				for (int i = 0; paths[i] != NULL; i++) {
-					//dummy val to store val of execve if it fails 
-					execve_ret_val = execve(strcat(paths[i], argv[0]), 
-					    argv, environ);
+					execve(strcat(paths[i], argv[0]), argv, environ);
 				}
 			}
-			//Shouln't reach this point (b/c of execve): error message w/ 
-			//Command not found 
+			//Shouln't reach this point if a valid command passed (b/c of execve): 
+			//error message w/ Command not found 
 			printf("%s: Command not found.\n", argv[0]);
-			exit(0);
+			return;
 		
 		}
+		
+		
+		//runs in the background if is_bg is true 
+		int bg_fg = is_bg ? 2 : 1;
 		//parent adds child job, child job info to job list 
-		//jobs, pid, STATE, 
+		addjob(jobs, pid, bg_fg, cmdline);
 
-		//default state is to run in the background 
-		int state = is_bg ? 2 : 1;
-		addjob(jobs, pid, state, cmdline);
+		//Unblocks the child 
+		Sigprocmask(SIG_BLOCK, &mask, &prevmask);
 
 		//Parent waits for fg job
-		if(!is_bg) {
-			waitpid(pid);
+		if (!is_bg) {
+			waitfg(pid);
 		}
 	}
 
@@ -601,16 +589,16 @@ do_bgfg(char **argv)
 	char *arg = argv[1];
 	if (is_bg) { // if bg, send sigcnt and print msg
 		
-		if(arg[0] == '%') { // by job (jid)
+		if (arg[0] == '%') { // by job (jid)
 			// cuts of the '%'
-			char *jidstr = (char *)arg[1];
+			char *jidstr = &arg[1];
 
 			int jid = atoi(jidstr);
 			if (jid == 0) {
 				printf("(%s): No such job", arg);
 				return;
 			}
-			JobP job = getjobjid(jid);
+			JobP job = getjobjid(jobs, jid);
 			if (job == NULL) {
 				printf("(%s): No such job", arg);
 				return;
@@ -622,12 +610,12 @@ do_bgfg(char **argv)
 
 		}
 		else { // by process (pid)
-			int pid = atoi(arg)
-			if(pid == 0) { // edgecase
+			int pid = atoi(arg);
+			if (pid == 0) { // edgecase
 				printf("%s%s", name, ": argument must be a PID or %%jobid");
 				return;
 			}
-			JobP job = getjobpid((pid_t)pid);
+			JobP job = getjobpid(jobs, (pid_t)pid);
 			if (job == NULL) {
 				printf("(%u): No such process", pid);
 				return;
@@ -641,16 +629,16 @@ do_bgfg(char **argv)
 	
 
 	} else { //if fg, send sigcnt signal and waitfg
-		if(arg[0] == '%') { // by job (jid)
+		if (arg[0] == '%') { // by job (jid)
 			// cuts of the '%'
-			char *jidstr = (char *)arg[1];
+			char *jidstr = &arg[1];
 
 			int jid = atoi(jidstr);
 			if (jid == 0) {
 				printf("(%s): No such job", arg);
 				return;
 			}
-			JobP job = getjobjid(jid);
+			JobP job = getjobjid(jobs, jid);
 			if (job == NULL) {
 				printf("(%s): No such job", arg);
 				return;
@@ -663,12 +651,12 @@ do_bgfg(char **argv)
 
 		}
 		else { // by process (pid)
-			int pid = atoi(arg)
-			if(pid == 0) { // edgecase
+			int pid = atoi(arg);
+			if (pid == 0) { // edgecase
 				printf("%s%s", name, ": argument must be a PID or %%jobid");
 				return;
 			}
-			JobP job = getjobpid((pid_t)pid);
+			JobP job = getjobpid(jobs, (pid_t)pid);
 			if (job == NULL) {
 				printf("(%u): No such process", pid);
 				return;
@@ -732,8 +720,8 @@ initpath(const char *pathstr)
 {
 	if (pathstr != NULL) {
 		// count # of paths
-		int colon_count = 0
-		for (int i = 0; i < strlen(pathstr); i++) {
+		int colon_count = 0;
+		for (unsigned int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
 				colon_count++;
 			}
@@ -741,23 +729,20 @@ initpath(const char *pathstr)
 		// malloc space
 		paths = Malloc(sizeof(char *) * (colon_count + 2));
 		//separate into strings
-		int begIdx = 0
-		int curr_pathIdx = 0
-		for (int i = 0; i < strlen(pathstr); i++) {
-			if(pathstr[i] == ':') {
-				paths[curr_pathIdx] = get_path(pathstr, begIdx, i);
+		int begIdx = 0;
+		int curr_pathIdx = 0;
+		for (unsigned int i = 0; i < strlen(pathstr); i++) {
+			if (pathstr[i] == ':') {
+				paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, i);
 				curr_pathIdx++;
 				begIdx = i + 1;
 			}
 		}
 
-		paths[curr_pathIdx] = get_path(pathstr, begIdx, strlen(pathstr));
+		paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, strlen(pathstr));
 		curr_pathIdx++;
 		paths[colon_count + 2] = NULL;
-
 	} 
-
-
 }
 
 /*
@@ -782,6 +767,8 @@ sigchld_handler(int signum)
 {
 	int status, sig; 
 	pid_t pid;
+
+	// TODO: FIX JOBS NOT CLEARING AFTER RUNNING, FOREGROUND JOB DOESN'T RETURN CONTROL
 	
 	//reap all the chlidren
 	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
@@ -789,7 +776,7 @@ sigchld_handler(int signum)
 		if (WIFEXITED(status)) { //child terminated normally
 			sig = WEXITSTATUS(status);
 			// remove child from jobs
-			clearjob(jobs, getjobpid(jobs, pid));
+			clearjob(getjobpid(jobs, pid));
 
 			
 		}
@@ -799,22 +786,23 @@ sigchld_handler(int signum)
 			sig = WTERMSIG(status);
 
 			//remove child from jobs
-			clearjob(jobs, getjobpid(jobs, pid));
+			clearjob(getjobpid(jobs, pid));
 
-			//print terminated statement
+			//TODO: print terminated statement
 		}
 		if (WIFSTOPPED(status) ) { // child was suspended
 			sig = WSTOPSIG(status);
 
 			JobP job = getjobpid(jobs, pid);
-			job->state = ST
+			job->state = ST;
 
-			//print stopped message
+			//TODO: print stopped message
 		}
 
 		// if (WIFCONTINUED(status)) {
 		//
 		// }
+		(void)sig;
 	}
 
 
@@ -841,7 +829,7 @@ sigint_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = fgpid();
+	pid_t pid = fgpid(jobs);
 	
 	// if there is a foreground job
 	if (pid != 0) {
@@ -871,7 +859,7 @@ sigtstp_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = fgpid();
+	pid_t pid = fgpid(jobs);
 	
 	// if there is a foreground job
 	if (pid != 0) {
@@ -1361,4 +1349,4 @@ Sio_error(const char s[])
 // Prevent "unused function" and "unused variable" warnings.
 static const void *dummy_ref[] = { Sio_error, Sio_putl, addjob, builtin_cmd,
     deletejob, do_bgfg, dummy_ref, fgpid, getjobjid, getjobpid, listjobs,
-    parseline, pid2jid, signame, waitfg, list_insert};
+    parseline, pid2jid, signame, waitfg};
