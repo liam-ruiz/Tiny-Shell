@@ -159,9 +159,22 @@ static pid_t 	Fork(void);
 static int 	Sigemptyset(sigset_t *set);
 static int	Sigaddset(sigset_t *set, int signo);
 static int 	Kill(pid_t pid, int sig);
+static int 	Sigprocmask(int how, const sigset_t *restrict set,
+                    sigset_t *restrict oldset);
 
 /* Helpers */
-static void	list_insert(char *str, int begIdx, int endIdx);
+static void	get_path(char *str, int begIdx, int endIdx);
+
+
+static int 
+Sigprocmask(int how, const sigset_t *restrict set, sigset_t *restrict oldset)
+{
+	int val = sigprocmask(how, set, oldset);
+	if (val < 0) {
+		Sio_error("sigprocmask error");
+	}
+	return (val);
+}
 
 static int 
 Kill(pid_t pid, int sig)
@@ -170,7 +183,7 @@ Kill(pid_t pid, int sig)
 	if (val < 0) {
 		sio_error("kill error");
 	}
-	return val;
+	return (val);
 }
 
 static int	
@@ -180,7 +193,7 @@ Sigaddset(sigset_t *set, int signo)
 	if (val < 0) {
 		unix_error("sigaddset error");
 	}
-	return val;
+	return (val);
 }
 static int 	
 Sigemptyset(sigset_t *set)
@@ -379,30 +392,73 @@ eval(const char *cmdline)
 {
 	//holds the command line arguments 
 	char *argv[MAXARGS];
-	//parses commandline
+	//parses commandline, updates argv with parsed
 	bool is_bg = parseline(cmdline, argv);
-
+	
 	pid_t pid; //process id 
+
+	//case where just pressed enter 
 	if (argv[0] == NULL) {
 		return;
 	}
+
 	bool is_builtin = builtin_cmd(argv);
+
 	if (!is_builtin) {
 		//Child runs job
-		if ((pid == Fork()) == 0) {
+
+		sigset_t mask, prevmask;
+		
+		//TODO: SET SIGPROCMASK
+		Sigprocmask()
+
+		// 	sigset_t mask, prevmask;
+		// pid_t pgid;
+		// Sigemptyset(&mask);
+		// Sigemptyset(&prevmask);
+		// Sigaddset(&mask, SIGCHLD);
+		// Sigprocmask(SIG_BLOCK, &mask, &prevmask);
+		// // block SIGCHILD
+		// while ((getjobpid(jobs, pid))->state == FG) {
+		// 	sigsuspend(&mask);
+		// }
+		// Sigprocmask(SIG_SETMASK, &prevmask, NULL);
+	
+		if ((pid = Fork()) == 0) {
 			setpgid(0,0);
-			//is either a directory, in which case run the execv
+
+			//dummy val for execve()
+			int execve_ret_val;
 			
+			//TODO: SET SIGPROCMASK
 
-			//isn't a directory, so needs to search the path and run execv
-
+			//is either a directory, in which case run the execv
+			if (strchr(argv[0], '/') != NULL || paths == NULL) {
+				execve_ret_val = execve(argv[0], argv, environ);
+			} else { //isn't a directory, so needs to search the path and run execv
+				for (int i = 0; paths[i] != NULL; i++) {
+					//dummy val to store val of execve if it fails 
+					execve_ret_val = execve(strcat(paths[i], argv[0]), 
+					    argv, environ);
+				}
+			}
+			//Shouln't reach this point (b/c of execve): error message w/ 
+			//Command not found 
+			printf("%s: Command not found.\n", argv[0]);
+			exit(0);
+		
 		}
+		//parent adds child job, child job info to job list 
+		//jobs, pid, STATE, 
+
+		//default state is to run in the background 
+		int state = is_bg ? 2 : 1;
+		addjob(jobs, pid, state, cmdline);
 
 		//Parent waits for fg job
 		if(!is_bg) {
-			//waitpid stuff
+			waitpid(pid);
 		}
-
 	}
 
 
@@ -530,13 +586,106 @@ builtin_cmd(char **argv)
 static void
 do_bgfg(char **argv) 
 {
+	//need to check for testcase where bg and fg are run on non valid jid/pid
+
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	(void)argv;
+	char *name = argv[0];
+	bool is_bg = strcmp(name, "bg");
 
-	//if bg, send sigcnt signal
+	if (argv[1] == NULL) {
+		printf("%s", "bg command requires PID or %%jobid argument");
+		return;
+	}
+	char *arg = argv[1];
+	if (is_bg) { // if bg, send sigcnt and print msg
+		
+		if(arg[0] == '%') { // by job (jid)
+			// cuts of the '%'
+			char *jidstr = (char *)arg[1];
 
-	//if fg, send sigcnt signal and waitfg
+			int jid = atoi(jidstr);
+			if (jid == 0) {
+				printf("(%s): No such job", arg);
+				return;
+			}
+			JobP job = getjobjid(jid);
+			if (job == NULL) {
+				printf("(%s): No such job", arg);
+				return;
+			}
+			job->state = BG;
+			//print msg
+
+			Kill(job->pid, SIGCONT);
+
+		}
+		else { // by process (pid)
+			int pid = atoi(arg)
+			if(pid == 0) { // edgecase
+				printf("%s%s", name, ": argument must be a PID or %%jobid");
+				return;
+			}
+			JobP job = getjobpid((pid_t)pid);
+			if (job == NULL) {
+				printf("(%u): No such process", pid);
+				return;
+			}
+			job->state = BG;
+			// print msg
+
+			Kill(job->pid, SIGCONT);
+			
+		}
+	
+
+	} else { //if fg, send sigcnt signal and waitfg
+		if(arg[0] == '%') { // by job (jid)
+			// cuts of the '%'
+			char *jidstr = (char *)arg[1];
+
+			int jid = atoi(jidstr);
+			if (jid == 0) {
+				printf("(%s): No such job", arg);
+				return;
+			}
+			JobP job = getjobjid(jid);
+			if (job == NULL) {
+				printf("(%s): No such job", arg);
+				return;
+			}
+			job->state = FG;
+		
+
+			Kill(job->pid, SIGCONT);
+			waitfg(job->pid);
+
+		}
+		else { // by process (pid)
+			int pid = atoi(arg)
+			if(pid == 0) { // edgecase
+				printf("%s%s", name, ": argument must be a PID or %%jobid");
+				return;
+			}
+			JobP job = getjobpid((pid_t)pid);
+			if (job == NULL) {
+				printf("(%u): No such process", pid);
+				return;
+			}
+			job->state = FG;
+		
+
+			Kill(job->pid, SIGCONT);
+			waitfg(job->pid);
+			
+		}
+	}
+
+	
+	
+
+	
 
 
 }
@@ -556,15 +705,15 @@ waitfg(pid_t pid)
 	sigset_t mask, prevmask;
 	Sigemptyset(&mask);
 	Sigemptyset(&prevmask);
-	Sigaddset(&mask, SIGCHLD)
-	Sigprocmask(SIG_BLOCK, &mask, &prevmask)
+	Sigaddset(&mask, SIGCHLD);
+	Sigprocmask(SIG_BLOCK, &mask, &prevmask);
 	// block SIGCHILD
-	while (getpgid(pid) == FG) {
+	while ((getjobpid(jobs, pid))->state == FG) {
 		sigsuspend(&mask);
 	}
 
 
-	Sigprocmask(SIG_SETMASK, &prevmask, NULL)
+	Sigprocmask(SIG_SETMASK, &prevmask, NULL);
 	
 }
 
@@ -598,6 +747,7 @@ initpath(const char *pathstr)
 			if(pathstr[i] == ':') {
 				paths[curr_pathIdx] = get_path(pathstr, begIdx, i);
 				curr_pathIdx++;
+				begIdx = i + 1;
 			}
 		}
 
@@ -605,12 +755,7 @@ initpath(const char *pathstr)
 		curr_pathIdx++;
 		paths[colon_count + 2] = NULL;
 
-	} else {
-		paths = Malloc(sizeof(char *) * 2);
-		paths[0] = Malloc(sizeof(char));
-		paths[0][0] = '\0'; 
-		paths[1] = NULL;
-	}
+	} 
 
 
 }
@@ -635,29 +780,45 @@ initpath(const char *pathstr)
 static void
 sigchld_handler(int signum)
 {
-	int status; 
+	int status, sig; 
 	pid_t pid;
-	// Prevent an "unused parameter" warning.
-
+	
 	//reap all the chlidren
 	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
+		
+		if (WIFEXITED(status)) { //child terminated normally
+			sig = WEXITSTATUS(status);
+			// remove child from jobs
+			clearjob(jobs, getjobpid(jobs, pid));
 
-		if (WIFEXITED(status)) {
-
-		}
-		if (WIFSIGNALED(status)) {
-
-		}
-		if (WIFSTOPPED(status) ) {
 			
 		}
-		if (WIFCONTINUED(status)) {
+		
+		if (WIFSIGNALED(status)) { //child was terminated due to a signal
+			
+			sig = WTERMSIG(status);
 
+			//remove child from jobs
+			clearjob(jobs, getjobpid(jobs, pid));
+
+			//print terminated statement
 		}
+		if (WIFSTOPPED(status) ) { // child was suspended
+			sig = WSTOPSIG(status);
+
+			JobP job = getjobpid(jobs, pid);
+			job->state = ST
+
+			//print stopped message
+		}
+
+		// if (WIFCONTINUED(status)) {
+		//
+		// }
 	}
 
 
-	
+	// Prevent an "unused parameter" warning.
 	(void)signum;
 }
 
@@ -680,7 +841,7 @@ sigint_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = getpgid(pid);
+	pid_t pid = fgpid();
 	
 	// if there is a foreground job
 	if (pid != 0) {
@@ -710,7 +871,7 @@ sigtstp_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = getpgid(pid);
+	pid_t pid = fgpid();
 	
 	// if there is a foreground job
 	if (pid != 0) {
@@ -719,7 +880,7 @@ sigtstp_handler(int signum)
 		// print stuff that job was suspended
 	}
 
-	(void)signum;
+
 }
 
 /*
