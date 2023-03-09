@@ -6,3 +6,9 @@ COMP 321 Project 4: Unix Shell
 TESTING STRATEGY
 
 <Replace with a detailed description of your testing strategy.>
+
+
+TESTS NEED TO PAST: 
+3 - foreground job not quitting
+4 - run background job not quitting
+5 - process jobs not quitting
