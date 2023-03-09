@@ -13,3 +13,5 @@ current directory
 bunch of directory lengths 
 
 are all error lines terminated by '\n'?
+
+
