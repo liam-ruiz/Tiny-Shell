@@ -121,9 +121,6 @@ static void	waitfg(pid_t pid);
 static void	sigchld_handler(int signum);
 static void	sigint_handler(int signum);
 static void	sigtstp_handler(int signum);
-static void	list_insert(char *str, int begIdx, int endIdx);
-
-
 
 // We are providing the following functions to you:
 
@@ -161,7 +158,20 @@ static void	*Malloc(size_t size);
 static pid_t 	Fork(void);
 static int 	Sigemptyset(sigset_t *set);
 static int	Sigaddset(sigset_t *set, int signo);
+static int 	Kill(pid_t pid, int sig);
 
+/* Helpers */
+static void	list_insert(char *str, int begIdx, int endIdx);
+
+static int 
+Kill(pid_t pid, int sig)
+{
+	int val = kill(pid, sig);
+	if (val < 0) {
+		sio_error("kill error");
+	}
+	return val;
+}
 
 static int	
 Sigaddset(sigset_t *set, int signo)
@@ -386,12 +396,16 @@ eval(const char *cmdline)
 		//Child runs job
 		if ((pid == Fork()) == 0) {
 			setpgid(0,0);
-			//if (execve())
+			//is either a directory, in which case run the execv
+			
+
+			//isn't a directory, so needs to search the path and run execv
+
 		}
 
 		//Parent waits for fg job
 		if(!is_bg) {
-
+			//waitpid stuff
 		}
 
 	}
@@ -524,6 +538,12 @@ do_bgfg(char **argv)
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	(void)argv;
+
+	//if bg, send sigcnt signal
+
+	//if fg, send sigcnt signal and waitfg
+
+
 }
 
 /* 
@@ -541,14 +561,12 @@ waitfg(pid_t pid)
 	sigset_t mask;
 	Sigemptyset(&mask);
 	Sigaddset(&mask, SIGCHLD)
+
+	//need sigprocmask
 	while (getpgid(pid) == FG) {
 		sigsuspend(&mask);
 	}
 
-	// optionally reap?
-	return ();
-
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	
 }
 
@@ -622,8 +640,20 @@ static void
 sigint_handler(int signum)
 {
 
+
 	// Prevent an "unused parameter" warning.
 	(void)signum;
+
+	pid_t pid = getpgid()
+	
+	// if there is a foreground job
+	if (pid != 0) {
+		Kill(pid, SIGINT)
+
+		// print stuff that job was interrupted
+	}
+
+	
 }
 
 /*
@@ -642,6 +672,17 @@ sigtstp_handler(int signum)
 {
 
 	// Prevent an "unused parameter" warning.
+	(void)signum;
+
+	pid_t pid = getpgid()
+	
+	// if there is a foreground job
+	if (pid != 0) {
+		Kill(pid, SIGTSTP)
+
+		// print stuff that job was suspended
+	}
+
 	(void)signum;
 }
 
