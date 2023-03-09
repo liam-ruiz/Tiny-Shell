@@ -66,7 +66,7 @@ extern char **environ;             // defined by libc
 static char prompt[] = "tsh> ";    // command line prompt (DO NOT CHANGE)
 static bool verbose = false;       // If true, print additional output.
 
-static ListP pathList = NULL;
+static char **paths = NULL;
 
 
 /*
@@ -213,30 +213,20 @@ Malloc(size_t size)
 }
 
 
-static void
-list_insert(char *str, int begIdx, int endIdx)
+static char *
+get_path(char *str, int begIdx, int endIdx)
 {
 	int length = endIdx - begIdx;
 	// Creates new node to be inserted
-	ListP newNode = Malloc(sizeof(ListP));
-	newNode->next = NULL;
-	newNode->path = Malloc(sizeof(length) + 1);
+	
+	char *newStr = Malloc(sizeof(length) + 1);
 	// Copies the string over
 	for (int i = 0; i < length; i++) {
-		newNode->path[i] = str[i + begIdx];
+		newStr[i] = str[i + begIdx];
 	}
 	// NUL terminates.
-	newNode->path[length] = '\0';
+	newStr[length] = '\0';
 
-	if (pathList == NULL) {
-		pathList = newNode;
-	} else {
-		ListP node = pathList;
-		while (node->next != NULL) {
-			node = node->next;
-		}
-		node->next = newNode;
-	}
 }
 
 
@@ -292,6 +282,8 @@ main(int argc, char **argv)
 	action.sa_flags = SA_RESTART;
 	if (sigemptyset(&action.sa_mask) < 0)
 		unix_error("sigemptyset error");
+	Sigaddset(&action.sa_mask, SIGSTP);
+	Sigaddset(&action.sa_mask, SIGCHLD);
 	if (sigaction(SIGINT, &action, NULL) < 0)
 		unix_error("sigaction error");
 
@@ -304,6 +296,8 @@ main(int argc, char **argv)
 	action.sa_flags = SA_RESTART;
 	if (sigemptyset(&action.sa_mask) < 0)
 		unix_error("sigemptyset error");
+	Sigaddset(&action.sa_mask, SIGINT);
+	Sigaddset(&action.sa_mask, SIGCHLD);
 	if (sigaction(SIGTSTP, &action, NULL) < 0)
 		unix_error("sigaction error");
 
@@ -316,6 +310,8 @@ main(int argc, char **argv)
 	action.sa_flags = SA_RESTART;
 	if (sigemptyset(&action.sa_mask) < 0)
 		unix_error("sigemptyset error");
+	Sigaddset(&action.sa_mask, SIGSTP);
+	Sigaddset(&action.sa_mask, SIGINT);
 	if (sigaction(SIGCHLD, &action, NULL) < 0)
 		unix_error("sigaction error");
 
@@ -350,7 +346,6 @@ main(int argc, char **argv)
 		if (fgets(cmdline, MAXLINE, stdin) == NULL && ferror(stdin))
 			app_error("fgets error");
 		if (feof(stdin)) // End of file (ctrl-d)
-			
 			exit(0);
 
 		// Evaluate the command line.
@@ -558,15 +553,18 @@ do_bgfg(char **argv)
 static void
 waitfg(pid_t pid)
 {
-	sigset_t mask;
+	sigset_t mask, prevmask;
 	Sigemptyset(&mask);
+	Sigemptyset(&prevmask);
 	Sigaddset(&mask, SIGCHLD)
-
-	//need sigprocmask
+	Sigprocmask(SIG_BLOCK, &mask, &prevmask)
+	// block SIGCHILD
 	while (getpgid(pid) == FG) {
 		sigsuspend(&mask);
 	}
 
+
+	Sigprocmask(SIG_SETMASK, &prevmask, NULL)
 	
 }
 
@@ -583,20 +581,37 @@ waitfg(pid_t pid)
 static void
 initpath(const char *pathstr)
 {
-
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
-	if (pathstr == NULL ) {
-		list_insert("", 0, 0);
-	} else {
-		int beginIdx = 0;
+	if (pathstr != NULL) {
+		// count # of paths
+		int colon_count = 0
 		for (int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
-				list_insert(pathstr, beginIdx, i);
-				beginIdx = i + 1;
+				colon_count++;
 			}
 		}
-		list_insert(pathstr, beginIdx, strlen(pathstr));
+		// malloc space
+		paths = Malloc(sizeof(char *) * (colon_count + 2));
+		//separate into strings
+		int begIdx = 0
+		int curr_pathIdx = 0
+		for (int i = 0; i < strlen(pathstr); i++) {
+			if(pathstr[i] == ':') {
+				paths[curr_pathIdx] = get_path(pathstr, begIdx, i);
+				curr_pathIdx++;
+			}
+		}
+
+		paths[curr_pathIdx] = get_path(pathstr, begIdx, strlen(pathstr));
+		curr_pathIdx++;
+		paths[colon_count + 2] = NULL;
+
+	} else {
+		paths = Malloc(sizeof(char *) * 2);
+		paths[0] = Malloc(sizeof(char));
+		paths[0][0] = '\0'; 
+		paths[1] = NULL;
 	}
+
 
 }
 
@@ -620,8 +635,29 @@ initpath(const char *pathstr)
 static void
 sigchld_handler(int signum)
 {
-
+	int status; 
+	pid_t pid;
 	// Prevent an "unused parameter" warning.
+
+	//reap all the chlidren
+	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
+
+		if (WIFEXITED(status)) {
+
+		}
+		if (WIFSIGNALED(status)) {
+
+		}
+		if (WIFSTOPPED(status) ) {
+			
+		}
+		if (WIFCONTINUED(status)) {
+
+		}
+	}
+
+
+	
 	(void)signum;
 }
 
@@ -644,11 +680,11 @@ sigint_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = getpgid()
+	pid_t pid = getpgid(pid);
 	
 	// if there is a foreground job
 	if (pid != 0) {
-		Kill(pid, SIGINT)
+		Kill(pid, SIGINT);
 
 		// print stuff that job was interrupted
 	}
@@ -674,11 +710,11 @@ sigtstp_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 
-	pid_t pid = getpgid()
+	pid_t pid = getpgid(pid);
 	
 	// if there is a foreground job
 	if (pid != 0) {
-		Kill(pid, SIGTSTP)
+		Kill(pid, SIGTSTP);
 
 		// print stuff that job was suspended
 	}
@@ -1164,4 +1200,4 @@ Sio_error(const char s[])
 // Prevent "unused function" and "unused variable" warnings.
 static const void *dummy_ref[] = { Sio_error, Sio_putl, addjob, builtin_cmd,
     deletejob, do_bgfg, dummy_ref, fgpid, getjobjid, getjobpid, listjobs,
-    parseline, pid2jid, signame, waitfg };
+    parseline, pid2jid, signame, waitfg, list_insert};
