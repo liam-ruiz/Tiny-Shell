@@ -412,13 +412,10 @@ eval(const char *cmdline)
 		if ((pid = Fork()) == 0) {
 			setpgid(0,0);
 
-			
-			
 			//Unblocks child 
 			Sigprocmask(SIG_SETMASK, &prevmask, NULL);
 			//is either a directory, in which case run the execv
 
-			//TODO: does execve run ./ natively? or seperate check
 			if (strchr(argv[0], '/') != NULL || paths == NULL) {
 				execve(argv[0], argv, environ);
 				
@@ -430,7 +427,8 @@ eval(const char *cmdline)
 			//Shouln't reach this point if a valid command passed (b/c of execve): 
 			//error message w/ Command not found 
 			printf("%s: Command not found.\n", argv[0]);
-			return;
+	
+			exit(0);
 		
 		}
 		
@@ -441,14 +439,17 @@ eval(const char *cmdline)
 		addjob(jobs, pid, bg_fg, cmdline);
 
 		//Unblocks the child 
-		Sigprocmask(SIG_BLOCK, &mask, &prevmask);
+		Sigprocmask(SIG_UNBLOCK, &mask, &prevmask);
 
 		//Parent waits for fg job
 		if (!is_bg) {
 			waitfg(pid);
+		} else {
+			JobP job = getjobpid(jobs, pid);
+			printf("[%u] (%u) %s", job->jid, job->pid, job->cmdline);
 		}
 	}
-
+	return;
 
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
@@ -544,15 +545,26 @@ builtin_cmd(char **argv)
 
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	char *name = argv[0];
+
+
 	if (strcmp(name, "quit") == 0) {
 		// may need to reap more children before exiting
+		if (verbose) {
+			Sio_puts("quit in builtin_cmd\n");
+		}
 		exit(0);
 	}
 	if (strcmp(name, "bg") == 0 || strcmp(name, "fg") == 0) {
+		if (verbose) {
+			Sio_puts("bg or fg in builtin_cmd\n");
+		}
 		do_bgfg(argv);
 		return (true);
 	}
 	if (strcmp(name, "jobs") == 0) {
+		if (verbose) {
+			Sio_puts("jobs in builtin_cmd\n");
+		}
 		listjobs(jobs);
 		return (true);
 	}
@@ -590,11 +602,11 @@ do_bgfg(char **argv)
 	if (is_bg) { // if bg, send sigcnt and print msg
 		
 		if (arg[0] == '%') { // by job (jid)
-			// cuts of the '%'
+			// cuts of the '%'    
 			char *jidstr = &arg[1];
 
 			int jid = atoi(jidstr);
-			if (jid == 0) {
+			if (jid == 0) { 
 				printf("(%s): No such job", arg);
 				return;
 			}
@@ -604,14 +616,14 @@ do_bgfg(char **argv)
 				return;
 			}
 			job->state = BG;
-			//print msg
+			//TODO: print msg
 
 			Kill(job->pid, SIGCONT);
 
 		}
 		else { // by process (pid)
 			int pid = atoi(arg);
-			if (pid == 0) { // edgecase
+			if (pid == 0) { // TODO: edgecase
 				printf("%s%s", name, ": argument must be a PID or %%jobid");
 				return;
 			}
@@ -621,7 +633,7 @@ do_bgfg(char **argv)
 				return;
 			}
 			job->state = BG;
-			// print msg
+			//TODO: print msg
 
 			Kill(job->pid, SIGCONT);
 			
@@ -652,7 +664,7 @@ do_bgfg(char **argv)
 		}
 		else { // by process (pid)
 			int pid = atoi(arg);
-			if (pid == 0) { // edgecase
+			if (pid == 0) { // TODO: edgecase
 				printf("%s%s", name, ": argument must be a PID or %%jobid");
 				return;
 			}
@@ -695,13 +707,19 @@ waitfg(pid_t pid)
 	Sigemptyset(&prevmask);
 	Sigaddset(&mask, SIGCHLD);
 	Sigprocmask(SIG_BLOCK, &mask, &prevmask);
+	if (verbose) {
+		Sio_puts("In waitfg\n");
+	}
 	// block SIGCHILD
-	while ((getjobpid(jobs, pid))->state == FG) {
-		sigsuspend(&mask);
+	while ((fgpid(jobs)== pid)) {
+		sigsuspend(&prevmask);
 	}
 
 
 	Sigprocmask(SIG_SETMASK, &prevmask, NULL);
+	if (verbose) {
+		Sio_puts("exits waitfg\n");
+	}
 	
 }
 
@@ -768,8 +786,10 @@ sigchld_handler(int signum)
 	int status, sig; 
 	pid_t pid;
 
-	// TODO: FIX JOBS NOT CLEARING AFTER RUNNING, FOREGROUND JOB DOESN'T RETURN CONTROL
-	
+	// TODO: FIX JOBS NOT CLEARING AFTER RUNNING, FOREGROUND JOB DOESN'T RETURN CONTROL ?
+	if (verbose) {
+		Sio_puts("In sigchildhandler");
+	}
 	//reap all the chlidren
 	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
 		
@@ -778,6 +798,10 @@ sigchld_handler(int signum)
 			// remove child from jobs
 			clearjob(getjobpid(jobs, pid));
 
+			if (verbose) {
+				Sio_puts("child terminated");
+			}
+
 			
 		}
 		
@@ -785,18 +809,38 @@ sigchld_handler(int signum)
 			
 			sig = WTERMSIG(status);
 
+			
 			//remove child from jobs
-			clearjob(getjobpid(jobs, pid));
+			long childjobid = (long)pid2jid(pid);
+			
 
+			clearjob(getjobpid(jobs, pid));
+			// Job [1] (26729) stopped by signal SIGTSTP
 			//TODO: print terminated statement
+			Sio_puts("Job [");
+			Sio_putl(childjobid);
+			Sio_puts("] (");
+			Sio_putl((long)pid);
+			Sio_puts(") terminated by signal SIG");
+			Sio_puts(signame[sig]);
+			Sio_puts("\n");
+
 		}
 		if (WIFSTOPPED(status) ) { // child was suspended
 			sig = WSTOPSIG(status);
 
 			JobP job = getjobpid(jobs, pid);
 			job->state = ST;
+			long childjobid = (long)pid2jid(pid);
 
 			//TODO: print stopped message
+			Sio_puts("Job [");
+			Sio_putl(childjobid);
+			Sio_puts("] (");
+			Sio_putl((long)pid);
+			Sio_puts(") stopped by signal SIG");
+			Sio_puts(signame[sig]);
+			Sio_puts("\n");
 		}
 
 		// if (WIFCONTINUED(status)) {
@@ -835,7 +879,7 @@ sigint_handler(int signum)
 	if (pid != 0) {
 		Kill(pid, SIGINT);
 
-		// print stuff that job was interrupted
+		
 	}
 
 	
@@ -865,7 +909,6 @@ sigtstp_handler(int signum)
 	if (pid != 0) {
 		Kill(pid, SIGTSTP);
 
-		// print stuff that job was suspended
 	}
 
 
