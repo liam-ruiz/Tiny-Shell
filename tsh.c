@@ -160,17 +160,32 @@ static int 	Sigprocmask(int how, const sigset_t *restrict set,
 /* Helpers */
 static char *	get_path(char *str, int begIdx, int endIdx);
 
-
+/*
+* Requires: 
+*   Requires the same arguments as sigprocmask.
+*
+* Effects: 
+*   Provides a wrapper function for sigprocmask. Produces a Sid_io
+*   error on failure and a 0 otherwise. 
+*/
 static int 
-Sigprocmask(int how, const sigset_t *restrict set, sigset_t *restrict oldset)
+Sigprocmask(int how, const sigset_t *restrict set, 
+    sigset_t *restrict oldset)
 {
-	int val = sigprocmask(how, set, oldset);
+    int val = sigprocmask(how, set, oldset);
 	if (val < 0) {
 		Sio_error("sigprocmask error");
 	}
 	return (val);
 }
-
+/*
+* Requires: 
+*   Requires the same arguments as kill.
+*
+* Effects: 
+*   Provides a wrapper function for kill. Produces a Sid_io
+*   error on failure and a 0 otherwise. 
+*/
 static int 
 Kill(pid_t pid, int sig)
 {
@@ -180,7 +195,14 @@ Kill(pid_t pid, int sig)
 	}
 	return (val);
 }
-
+/*
+* Requires: 
+*   Requires the same arguments as sigaddset.
+*
+* Effects: 
+*   Provides a wrapper function for sigaddset. Produces a Sid_io
+*   error on failure and a 0 otherwise. 
+*/
 static int	
 Sigaddset(sigset_t *set, int signo)
 {
@@ -190,6 +212,14 @@ Sigaddset(sigset_t *set, int signo)
 	}
 	return (val);
 }
+/*
+* Requires: 
+*   Requires the same arguments as sigemptyset.
+*
+* Effects: 
+*   Provides a wrapper function for sigempytset. Produces a Sid_io
+*   error on failure and a 0 otherwise. 
+*/
 static int 	
 Sigemptyset(sigset_t *set)
 {
@@ -442,7 +472,7 @@ eval(const char *cmdline)
 		Sigprocmask(SIG_UNBLOCK, &mask, &prevmask);
 
 		//Parent waits for fg job
-		if (!is_bg) {
+		if (!is_bg ) {
 			waitfg(pid);
 		} else {
 			JobP job = getjobpid(jobs, pid);
@@ -450,9 +480,6 @@ eval(const char *cmdline)
 		}
 	}
 	return;
-
-
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 
 }
 
@@ -542,10 +569,8 @@ parseline(const char *cmdline, char **argv)
 static bool
 builtin_cmd(char **argv) 
 {
-
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	char *name = argv[0];
-
 
 	if (strcmp(name, "quit") == 0) {
 		// may need to reap more children before exiting
@@ -592,10 +617,10 @@ do_bgfg(char **argv)
 	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	(void)argv;
 	char *name = argv[0];
-	bool is_bg = strcmp(name, "bg");
-
+	bool is_bg = strcmp(name, "bg") == 0;
+	
 	if (argv[1] == NULL) {
-		printf("%s", "bg command requires PID or %%jobid argument");
+		printf("%s", "bg command requires PID or %%jobid argument\n");
 		return;
 	}
 	char *arg = argv[1];
@@ -607,16 +632,17 @@ do_bgfg(char **argv)
 
 			int jid = atoi(jidstr);
 			if (jid == 0) { 
-				printf("(%s): No such job", arg);
+				printf("%s: No such job\n", arg);
 				return;
 			}
 			JobP job = getjobjid(jobs, jid);
 			if (job == NULL) {
-				printf("(%s): No such job", arg);
+				printf("%s: No such job\n", arg);
 				return;
 			}
 			job->state = BG;
-			//TODO: print msg
+			
+			printf("[%u] (%u) %s", job->jid, job->pid, job->cmdline);
 
 			Kill(job->pid, SIGCONT);
 
@@ -624,7 +650,7 @@ do_bgfg(char **argv)
 		else { // by process (pid)
 			int pid = atoi(arg);
 			if (pid == 0) { // TODO: edgecase
-				printf("%s%s", name, ": argument must be a PID or %%jobid");
+				printf("%s%s", name, ": argument must be a PID or %%jobid\n");
 				return;
 			}
 			JobP job = getjobpid(jobs, (pid_t)pid);
@@ -633,7 +659,8 @@ do_bgfg(char **argv)
 				return;
 			}
 			job->state = BG;
-			//TODO: print msg
+			
+			printf("[%u] (%u) %s\n", job->jid, job->pid, job->cmdline);
 
 			Kill(job->pid, SIGCONT);
 			
@@ -707,19 +734,14 @@ waitfg(pid_t pid)
 	Sigemptyset(&prevmask);
 	Sigaddset(&mask, SIGCHLD);
 	Sigprocmask(SIG_BLOCK, &mask, &prevmask);
-	if (verbose) {
-		Sio_puts("In waitfg\n");
-	}
+	
 	// block SIGCHILD
-	while ((fgpid(jobs)== pid)) {
+	while ((fgpid(jobs) == pid)) {
 		sigsuspend(&prevmask);
 	}
 
-
 	Sigprocmask(SIG_SETMASK, &prevmask, NULL);
-	if (verbose) {
-		Sio_puts("exits waitfg\n");
-	}
+	
 	
 }
 
@@ -787,34 +809,22 @@ sigchld_handler(int signum)
 	pid_t pid;
 
 	// TODO: FIX JOBS NOT CLEARING AFTER RUNNING, FOREGROUND JOB DOESN'T RETURN CONTROL ?
-	if (verbose) {
-		Sio_puts("In sigchildhandler");
-	}
+	
 	//reap all the chlidren
 	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
 		
 		if (WIFEXITED(status)) { //child terminated normally
 			sig = WEXITSTATUS(status);
 			// remove child from jobs
-			clearjob(getjobpid(jobs, pid));
-
-			if (verbose) {
-				Sio_puts("child terminated");
-			}
-
-			
+			deletejob(jobs, pid);
 		}
 		
 		if (WIFSIGNALED(status)) { //child was terminated due to a signal
 			
 			sig = WTERMSIG(status);
-
-			
 			//remove child from jobs
 			long childjobid = (long)pid2jid(pid);
-			
-
-			clearjob(getjobpid(jobs, pid));
+			deletejob(jobs, pid);
 			// Job [1] (26729) stopped by signal SIGTSTP
 			//TODO: print terminated statement
 			Sio_puts("Job [");
@@ -844,14 +854,17 @@ sigchld_handler(int signum)
 		}
 
 		// if (WIFCONTINUED(status)) {
-		//
+		// 	if((getjobpid(jobs, pid))->state == FG ) {
+		// 		waitfg(pid);
+		// 	}
 		// }
-		(void)sig;
+		
 	}
 
 
 	// Prevent an "unused parameter" warning.
 	(void)signum;
+	(void)sig;
 }
 
 /* 
