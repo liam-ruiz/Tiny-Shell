@@ -7,7 +7,6 @@ TESTING STRATEGY
 
 <Replace with a detailed description of your testing strategy.>
 
-file that 
 null path 
 current directory 
 bunch of directory lengths 
@@ -16,4 +15,12 @@ are all error lines terminated by '\n'?
 
 need to look at sig_xxx handlers more: what abt multiple of the same
 signal (concurrently) or multiple different signals at the same time?
+
+testcase on bg/fg? 
+exit out of child process when execv fails b/c no path exists (test case)
+
+"When you implement your signal handlers, be sure to send SIGINT and 
+SIGTSTP signals to the entire foreground process group, , using “-pid” instead 
+of “pid” in the argument to the kill function.The sdriver.pl program tests for 
+this error" - Do we handle this? 
 

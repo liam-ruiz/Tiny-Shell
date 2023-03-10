@@ -61,7 +61,7 @@ extern char **environ;             // defined by libc
 static char prompt[] = "tsh> ";    // command line prompt (DO NOT CHANGE)
 static bool verbose = false;       // If true, print additional output.
 
-static char **paths = NULL;
+static char **paths = NULL;        //paths list to search through 
 
 
 /*
@@ -488,6 +488,7 @@ eval(const char *cmdline)
 			}
 			//Execv must not have run if reached this point. 
 			printf("%s: Command not found.\n", argv[0]);
+			//Exits out of child process.
 			exit(0);
 		}
 		
@@ -497,7 +498,7 @@ eval(const char *cmdline)
 		addjob(jobs, pid, bg_fg, cmdline);
 		//Unblocks the child. 
 		Sigprocmask(SIG_UNBLOCK, &mask, &prevmask);
-		//Parent waits for fg job
+		//Parent waits for fg job.
 		if (!is_bg ) {
 			waitfg(pid);
 		} else { //Prints job information. 
@@ -505,6 +506,7 @@ eval(const char *cmdline)
 			printf("[%u] (%u) %s", job->jid, job->pid, job->cmdline);
 		}
 	}
+	//Returns to shell read/eval loop in main. 
 	return;
 
 }
@@ -595,14 +597,14 @@ parseline(const char *cmdline, char **argv)
 static bool
 builtin_cmd(char **argv) 
 {
-	// Prevent an "unused parameter" warning.  REMOVE THIS STATEMENT!
 	char *name = argv[0];
 
 	if (strcmp(name, "quit") == 0) {
-		// may need to reap more children before exiting
+		
 		if (verbose) {
 			Sio_puts("quit in builtin_cmd\n");
 		}
+		//TODO: WHAT ABT THE CHILDREN ? NAH DW ABT IT 
 		exit(0);
 	}
 	if (strcmp(name, "bg") == 0 || strcmp(name, "fg") == 0) {
@@ -619,10 +621,7 @@ builtin_cmd(char **argv)
 		listjobs(jobs);
 		return (true);
 	}
-
-
-	
-	return (false);     // This is not a built-in command.
+	return (false);     // This is not a built-in command. 
 }
 
 /* 
@@ -785,20 +784,21 @@ static void
 initpath(const char *pathstr)
 {
 	if (pathstr != NULL) {
-		// count # of paths
+		// Counts the number of paths.
 		int colon_count = 0;
 		for (unsigned int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
 				colon_count++;
 			}
 		}
-		// malloc space
+		// Malloc space for paths. 
 		paths = Malloc(sizeof(char *) * (colon_count + 2));
-		//separate into strings
+		//Separates the pathstring into seperate paths. 
 		int begIdx = 0;
 		int curr_pathIdx = 0;
 		for (unsigned int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
+				//Calls helper function to generate the path. 
 				paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, i);
 				if (verbose)
 					printf("%s\n", paths[curr_pathIdx]);
@@ -807,13 +807,13 @@ initpath(const char *pathstr)
 			}
 			
 		}
-
+		//Adds the final path. 
 		paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, strlen(pathstr));
-		
+		//TODO: What does this do? 
 		curr_pathIdx++;
+		//Null-terminates paths. 
 		paths[colon_count + 2] = NULL;
-		
-
+	
 	} 
 }
 
@@ -847,18 +847,18 @@ sigchld_handler(int signum)
 		
 		if (WIFEXITED(status)) { //child terminated normally
 			sig = WEXITSTATUS(status);
-			// remove child from jobs
+			// Removes the child from jobs.
 			deletejob(jobs, pid);
 		}
 		
 		if (WIFSIGNALED(status)) { //child was terminated due to a signal
 			
 			sig = WTERMSIG(status);
-			//remove child from jobs
+			//Removes the child from jobs. 
 			long childjobid = (long)pid2jid(pid);
 			deletejob(jobs, pid);
-			// Job [1] (26729) stopped by signal SIGTSTP
-			//TODO: print terminated statement
+			
+			//Prints the terminated child message. 
 			Sio_puts("Job [");
 			Sio_putl(childjobid);
 			Sio_puts("] (");
@@ -875,7 +875,7 @@ sigchld_handler(int signum)
 			job->state = ST;
 			long childjobid = (long)pid2jid(pid);
 
-			//TODO: print stopped message
+			//Prints the stopped child message. 
 			Sio_puts("Job [");
 			Sio_putl(childjobid);
 			Sio_puts("] (");
@@ -922,9 +922,7 @@ sigint_handler(int signum)
 	
 	// if there is a foreground job
 	if (pid != 0) {
-		Kill(pid, SIGINT);
-
-		
+		Kill(pid, SIGINT);	
 	}
 
 	
@@ -953,9 +951,10 @@ sigtstp_handler(int signum)
 	// if there is a foreground job
 	if (pid != 0) {
 		Kill(pid, SIGTSTP);
-
 	}
 
+	//Todo: does this send SIGSTP to all jobs in the foreground 
+	//process group? 
 
 }
 
@@ -976,6 +975,8 @@ sigquit_handler(int signum)
 	// Prevent an "unused parameter" warning.
 	(void)signum;
 	Sio_puts("Terminating after receipt of SIGQUIT signal\n");
+	//TODO: Why is this _exit(1) not _exit(0)? 
+	//do we need to send sigquit to all children
 	_exit(1);
 }
 
