@@ -14,4 +14,6 @@ bunch of directory lengths
 
 are all error lines terminated by '\n'?
 
+need to look at sig_xxx handlers more: what abt multiple of the same
+signal (concurrently) or multiple different signals at the same time?
 
