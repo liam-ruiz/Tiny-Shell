@@ -478,12 +478,17 @@ eval(const char *cmdline)
 				for (int i = 0; paths[i] != NULL; i++) {
 					//Runs execv.
 					if (verbose) {
-						printf("%s", "attempted path: '");
-						char *str = strcat(paths[i], argv[0]);
-						printf("%s", str);
+						printf("%s", "from path: ");
+						printf("%s ", paths[i]);
+						printf("%s", " attempted path: '");
+						strcat(paths[i], argv[0]);
+						printf("%s", paths[i]);
 						printf("%s", "'\n");
+						
+
 					}
 					execve(strcat(paths[i], argv[0]), argv, environ);
+					//execve(strcat(strcat("/", argv[0])), argv, environ);
 				}
 			}
 			//Execv must not have run if reached this point. 
@@ -784,6 +789,9 @@ static void
 initpath(const char *pathstr)
 {
 	if (pathstr != NULL) {
+		if (verbose) {
+			printf("Full pathstring: %s\n", pathstr);
+		}
 		// Counts the number of paths.
 		int colon_count = 0;
 		for (unsigned int i = 0; i < strlen(pathstr); i++) {
@@ -798,7 +806,7 @@ initpath(const char *pathstr)
 		int curr_pathIdx = 0;
 		for (unsigned int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
-				//Calls helper function to generate the path. 
+				//Calls helper function to generate each path. 
 				paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, i);
 				if (verbose)
 					printf("%s\n", paths[curr_pathIdx]);
@@ -809,10 +817,15 @@ initpath(const char *pathstr)
 		}
 		//Adds the final path. 
 		paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, strlen(pathstr));
-		//TODO: What does this do? 
-		curr_pathIdx++;
-		//Null-terminates paths. 
-		paths[colon_count + 2] = NULL;
+		if (verbose) {
+			for(int j = 0; j <= curr_pathIdx; j++){
+				printf("From init: %s\n", paths[j]);
+			}
+		}
+		//Null-terminates the paths array. 
+		paths[curr_pathIdx +1] = NULL;
+
+		
 	
 	} 
 }
