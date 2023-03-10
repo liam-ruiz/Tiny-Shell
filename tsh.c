@@ -200,7 +200,7 @@ Kill(pid_t pid, int sig)
 *   Requires the same arguments as sigaddset.
 *
 * Effects: 
-*   Provides a wrapper function for sigaddset. Produces a Sid_io
+*   Provides a wrapper function for sigaddset. Produces a unix
 *   error on failure and a 0 otherwise. 
 */
 static int	
@@ -217,7 +217,7 @@ Sigaddset(sigset_t *set, int signo)
 *   Requires the same arguments as sigemptyset.
 *
 * Effects: 
-*   Provides a wrapper function for sigempytset. Produces a Sid_io
+*   Provides a wrapper function for sigempytset. Produces a unix
 *   error on failure and a 0 otherwise. 
 */
 static int 	
@@ -229,7 +229,15 @@ Sigemptyset(sigset_t *set)
 	}
 	return (val);
 }
-
+/*
+* Requires: 
+*   Requires the same arguments as fork.
+*
+* Effects: 
+*   Provides a wrapper function for fork. Produces a unix
+*   error on failure and a pid (depending on which process)
+*   otherwise. 
+*/
 static pid_t
 Fork(void)
 {
@@ -239,7 +247,14 @@ Fork(void)
 	}
 	return (pid);
 }
-
+/*
+* Requires: 
+*   Requires the same arguments as malloc.
+*
+* Effects: 
+*   Provides a wrapper function for malloc. Produces a unix
+*   error on failure and a pointer otherwise. 
+*/
 static void *
 Malloc(size_t size)
 {
@@ -250,20 +265,28 @@ Malloc(size_t size)
 	return (ptr);
 }
 
-
+/*
+* Requires: 
+*   A pointer to a string str, an int beginning index,
+*   and an int end index.
+*
+* Effects: 
+*   Produces a pointer to a NUL-terminated string from
+*   begIdx (inclusive) to endIdx (exclusive). 
+*/
 static char *
 get_path(char *str, int begIdx, int endIdx)
 {
 	int length = endIdx - begIdx;
-	// Creates new node to be inserted
-	
-	char *newStr = Malloc(sizeof(length) + 1);
-	// Copies the string over
+	// Creates the new string to be inserted.
+	char *newStr = Malloc(sizeof(length) + 2);
+	// Copies the string over.
 	for (int i = 0; i < length; i++) {
 		newStr[i] = str[i + begIdx];
 	}
-	// NUL terminates.
-	newStr[length] = '\0';
+	// NUL terminates the string.
+	newStr[length] = '/';
+	newStr[length + 1] = '\0';
 	return newStr;
 }
 
@@ -271,10 +294,12 @@ get_path(char *str, int begIdx, int endIdx)
 
 /*
  * Requires:
- *   <to be filled in by the student(s)>
+ *   Nothing. 
  *
  * Effects:
- *   <to be filled in by the student(s)>
+ *   Runs a tiny shell program that takes one of four
+ *   built in commands and that command's arguments or an 
+ *   executable and its arguments. 
  */
 int
 main(int argc, char **argv) 
@@ -407,74 +432,75 @@ main(int argc, char **argv)
  * when we type ctrl-c (ctrl-z) at the keyboard.  
  *
  * Requires:
- *   <to be filled in by the student(s)>
+ *   A properly terminated commandline string. 
  *
  * Effects:
- *   <to be filled in by the student(s)>
+ *   Evaluates the commandine passed; immediately executes built-in 
+ *   commands. Otherwise, runs its executable in child process (either
+ *   in the foreground or background). Returns to main() after. 
+ *   
  */
 static void
 eval(const char *cmdline) 
 {
-	//holds the command line arguments 
+	//Holds the command line arguments. 
 	char *argv[MAXARGS];
-	//parses commandline, updates argv with parsed
+	//Parses the commandline and updates argv with parsed. 
 	bool is_bg = parseline(cmdline, argv);
 	
 	pid_t pid; //process id 
 
-	//case where just pressed enter 
+	//Case that handles just pressing enter. 
 	if (argv[0] == NULL) {
 		return;
 	}
 
 	bool is_builtin = builtin_cmd(argv);
 
-	if (!is_builtin) {
-		//Child runs job
+	if (!is_builtin) {//Child runs the job. 
 
-		//Blocks child to avoid race condition
+		//Blocks child to avoid race condition. 
 		sigset_t mask, prevmask;
 		Sigemptyset(&mask);
 		Sigemptyset(&prevmask);
 		Sigaddset(&mask, SIGCHLD);
 		Sigprocmask(SIG_BLOCK, &mask, &prevmask);
-		
+		//Child process runs the job. 
 		if ((pid = Fork()) == 0) {
 			setpgid(0,0);
-
-			//Unblocks child 
+			//Unblocks the child. 
 			Sigprocmask(SIG_SETMASK, &prevmask, NULL);
-			//is either a directory, in which case run the execv
-
+			//If file is a directory, then run execv.
 			if (strchr(argv[0], '/') != NULL || paths == NULL) {
 				execve(argv[0], argv, environ);
 				
-			} else { //isn't a directory, so needs to search the path and run execv
+			} else { //File is not a directory, so searchs the paths
 				for (int i = 0; paths[i] != NULL; i++) {
+					//Runs execv.
+					if (verbose) {
+						printf("%s", "attempted path: '");
+						char *str = strcat(paths[i], argv[0]);
+						printf("%s", str);
+						printf("%s", "'\n");
+					}
 					execve(strcat(paths[i], argv[0]), argv, environ);
 				}
 			}
-			//Shouln't reach this point if a valid command passed (b/c of execve): 
-			//error message w/ Command not found 
+			//Execv must not have run if reached this point. 
 			printf("%s: Command not found.\n", argv[0]);
-	
 			exit(0);
-		
 		}
 		
-		
-		//runs in the background if is_bg is true 
+		//Runs in the background if is_bg is true. 
 		int bg_fg = is_bg ? 2 : 1;
-		//parent adds child job, child job info to job list 
+		//Parent adds child job and child job info to job list. 
 		addjob(jobs, pid, bg_fg, cmdline);
-
-		//Unblocks the child 
+		//Unblocks the child. 
 		Sigprocmask(SIG_UNBLOCK, &mask, &prevmask);
-
 		//Parent waits for fg job
 		if (!is_bg ) {
 			waitfg(pid);
-		} else {
+		} else { //Prints job information. 
 			JobP job = getjobpid(jobs, pid);
 			printf("[%u] (%u) %s", job->jid, job->pid, job->cmdline);
 		}
@@ -650,12 +676,12 @@ do_bgfg(char **argv)
 		else { // by process (pid)
 			int pid = atoi(arg);
 			if (pid == 0) { // TODO: edgecase
-				printf("%s%s", name, ": argument must be a PID or %%jobid\n");
+				printf("%s%s", name, ": argument must be a PID or %jobid\n");
 				return;
 			}
 			JobP job = getjobpid(jobs, (pid_t)pid);
 			if (job == NULL) {
-				printf("(%u): No such process", pid);
+				printf("(%u): No such process\n", pid);
 				return;
 			}
 			job->state = BG;
@@ -774,14 +800,20 @@ initpath(const char *pathstr)
 		for (unsigned int i = 0; i < strlen(pathstr); i++) {
 			if (pathstr[i] == ':') {
 				paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, i);
+				if (verbose)
+					printf("%s\n", paths[curr_pathIdx]);
 				curr_pathIdx++;
 				begIdx = i + 1;
 			}
+			
 		}
 
 		paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, strlen(pathstr));
+		
 		curr_pathIdx++;
 		paths[colon_count + 2] = NULL;
+		
+
 	} 
 }
 
