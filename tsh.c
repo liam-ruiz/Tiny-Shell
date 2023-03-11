@@ -61,7 +61,7 @@ extern char **environ;             // defined by libc
 static char prompt[] = "tsh> ";    // command line prompt (DO NOT CHANGE)
 static bool verbose = false;       // If true, print additional output.
 
-static char **paths = NULL;        //paths list to search through 
+static char **paths = NULL;        // paths list to search through 
 
 
 /*
@@ -279,7 +279,7 @@ get_path(char *str, int begIdx, int endIdx)
 {
 	int length = endIdx - begIdx;
 	// Creates the new string to be inserted.
-	char *newStr = Malloc((sizeof(char) * length) + 2);
+	char *newStr = Malloc((sizeof(char) * (length + 2)));
 	// Copies the string over.
 	for (int i = 0; i < length; i++) {
 		newStr[i] = str[i + begIdx];
@@ -473,7 +473,6 @@ eval(const char *cmdline)
 			//If file is a directory, then run execv.
 			if (strchr(argv[0], '/') != NULL || paths == NULL) {
 				execve(argv[0], argv, environ);
-				
 			} else { //File is not a directory, so searchs the paths
 				for (int i = 0; paths[i] != NULL; i++) {
 					// Tests case that represents current directory.
@@ -513,7 +512,7 @@ eval(const char *cmdline)
 		//Unblocks the child. 
 		Sigprocmask(SIG_UNBLOCK, &mask, &prevmask);
 		//Parent waits for fg job.
-		if (!is_bg ) {
+		if (!is_bg) {
 			waitfg(pid);
 		} else { //Prints job information when running as background.
 			JobP job = getjobpid(jobs, pid);
@@ -522,7 +521,6 @@ eval(const char *cmdline)
 	}
 	//Returns while true loop.
 	return;
-
 }
 
 /* 
@@ -672,11 +670,10 @@ do_bgfg(char **argv)
 			job->state = BG;
 			printf("[%u] (%u) %s", job->jid, job->pid, job->cmdline);
 			Kill(job->pid, SIGCONT);
-		}
-		else { // by process (pid)
+		} else { // by process (pid)
 			/*Checks to ensure the first character is an integer, since 
 			atoi doesn't distinguish '0' and an error. */
-			if (!(arg[0] >= '0' && arg[0] <= '9')){
+			if (!(arg[0] >= '0' && arg[0] <= '9')) {
 				printf("%s%s", name, ": argument must be a PID or %jobid\n");
 				return;
 			}
@@ -715,11 +712,10 @@ do_bgfg(char **argv)
 			Kill(job->pid, SIGCONT);
 			waitfg(job->pid);
 
-		}
-		else { // by process (pid)
+		} else { // by process (pid)
 			/*Checks to ensure the first character is an integer, since 
 			atoi doesn't distinguish '0' and an error. */
-			if (!(arg[0] >= '0' && arg[0] <= '9')){
+			if (!(arg[0] >= '0' && arg[0] <= '9')) {
 				printf("%s%s", name, ": argument must be a PID or %jobid\n");
 				return;
 			}
@@ -735,7 +731,6 @@ do_bgfg(char **argv)
 			job->state = FG;
 			Kill(job->pid, SIGCONT);
 			waitfg(job->pid);
-			
 		}
 	}
 }
@@ -808,7 +803,7 @@ initpath(const char *pathstr)
 		paths[curr_pathIdx] = get_path((char *)pathstr, begIdx, strlen(pathstr));
 		//Verbose check for correct paths. 
 		if (verbose) {
-			for(int j = 0; j <= curr_pathIdx; j++){
+			for (int j = 0; j <= curr_pathIdx; j++) {
 				printf("From init: %s\n", paths[j]);
 			}
 		}
@@ -861,7 +856,7 @@ sigchld_handler(int signum)
 			Sio_puts(signame[sig]);
 			Sio_puts("\n");
 		}
-		if (WIFSTOPPED(status) ) { // child was suspended
+		if (WIFSTOPPED(status)) { // child was suspended
 			sig = WSTOPSIG(status);
 			//Changes the job status to stopped. 
 			JobP job = getjobpid(jobs, pid);
