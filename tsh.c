@@ -172,7 +172,7 @@ static int
 Sigprocmask(int how, const sigset_t *restrict set, 
     sigset_t *restrict oldset)
 {
-    int val = sigprocmask(how, set, oldset);
+	int val = sigprocmask(how, set, oldset);
 	if (val < 0) {
 		Sio_error("sigprocmask error");
 	}
