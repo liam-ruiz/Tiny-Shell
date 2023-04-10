@@ -1,22 +1,11 @@
-################
-CS:APP Shell Lab
-################
+A simple shell implementation (tsh.c) that implements the following built-in commands:
+– The quit command terminates the shell.
+– The jobs command lists the stopped jobs and running background jobs.
+– The bg <job> command restarts <job> by sending it a SIGCONT signal, and then runs it in
+the background. The <job> argument can be either a PID or a JID. (Which can be seen by running the jobs command)
+– The fg <job> command restarts <job> by sending it a SIGCONT signal, and then runs it in
+the foreground. The <job> argument can be either a PID or a JID.
 
-Files:
 
-Makefile	# Compiles your shell program and runs the tests
-README		# This file
-tsh.c		# The shell program that you will write and turn in
-tshref		# The reference shell executable
-
-# The remaining files are used to test your shell
-sdriver.pl	# The trace-driven shell driver
-trace*.txt	# The sample trace files that control the shell driver
-tshref.out 	# Example output of the reference shell on the sample traces
-
-# Little C programs that are called by the trace files
-myspin.c	# Takes argument <n> and spins for <n> seconds
-mysplit.c	# Forks a child that spins for <n> seconds
-mystop.c        # Spins for <n> seconds and sends SIGTSTP to itself
-myint.c         # Spins for <n> seconds and sends SIGINT to itself
-
+Additionally, the shell can run other programs by supplying a path and arguments, just like a normal shell. There are some 
+accompanying simple programs to run the shell with.
